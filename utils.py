@@ -70,16 +70,38 @@ def get_tpr(c_matrix):
 
     return {"tpr":tpr, "tnr":tnr, "fpr":fpr, "fnr":fnr, "P(Y = 1)":group_fairness_metric}
 
-def train_group_fairness(df_train):
-    df_train.loc[df_train["Risk_bad"] == 1, "Sex_male"] = np.random.binomial(1, 0.5, len(df_train.loc[df_train["Risk_bad"] == 1, "Sex_male"]))
-    X_train = df_train.drop("Risk_bad", axis = 1).values
-    y_train = df_train["Risk_bad"].values
-    model = train_model(X_train, y_train, "sex_group_fairness")
-    return model
-
 def train_separation(df_train):
-    df_train.loc[df_train["Risk_bad"] == 0, "Sex_male"] = np.random.binomial(1, 0.5, len(df_train.loc[df_train["Risk_bad"] == 0, "Sex_male"]))
+    df_train["Sex_male"] = np.random.binomial(1, 0.5, len(df_train))
     X_train = df_train.drop("Risk_bad", axis = 1).values
     y_train = df_train["Risk_bad"].values
     model = train_model(X_train, y_train, "sex_separation")
     return model
+
+def test_group_fairness(model, df_test, threshold):
+    df_male = df_test[df_test["Sex_male"]==1.0]
+    df_female = df_test[df_test["Sex_male"]==0.0]
+
+    x_test_male = df_male[df_male.columns[:-1]]
+    y_true_male = df_male[df_male.columns[-1]]
+
+    x_test_female = df_female[df_female.columns[:-1]]
+    y_true_female = df_female[df_female.columns[-1]]
+
+    y_proba_male = model.predict_proba(x_test_male.values)[:,1]
+    y_proba_female = model.predict_proba(x_test_female.values)[:,1]
+
+    y_preds_male = np.where(y_proba_male >= threshold, 1, 0)
+    y_preds_female = np.where(y_proba_female >= threshold, 1, 0)
+
+    confusion_matrix_male = confusion_matrix(y_true=y_true_male, y_pred=y_preds_male)
+    confusion_matrix_female = confusion_matrix(y_true=y_true_female, y_pred=y_preds_female)
+
+    x_test = df_test[df_test.columns[:-1]]
+    y_test = df_test[df_test.columns[-1]]
+    y_proba = model.predict_proba(x_test.values)[:, 1]
+    y_preds = np.where(y_proba >= threshold, 1, 0)
+    acc = np.where(y_preds==y_test, 1, 0).sum() / len(y_test)
+
+    print(threshold, acc)
+
+    return confusion_matrix_male, confusion_matrix_female, acc
