@@ -20,7 +20,7 @@ def train_model(X_train, y_train, model_name):
 
     return best_model
 
-def anticlassification_sex(model, y_preds, df_test):
+def anticlassification_gender(model, y_preds, df_test):
     test_df = df_test.copy()
     test_df["Sex_male"] = test_df["Sex_male"].map({0.0:1.0, 1.0:0.0})
     y_preds_new = model.predict(test_df.values)
@@ -38,7 +38,7 @@ def train_anticlassification(df_train, drop_feat):
     model = train_model(X_train, y_train, "sex_anticlassification")
     return model
 
-def group_fairness(model, df_test):
+def group_fairness_gender(model, df_test):
     df_male = df_test[df_test["Sex_male"]==1.0]
     df_female = df_test[df_test["Sex_male"]==0.0]
 
@@ -56,13 +56,12 @@ def group_fairness(model, df_test):
 
     return confusion_matrix_male, confusion_matrix_female
 
-def get_tpr(c_matrix):
+def get_tpr_common(c_matrix):
 
     tn, fp, fn, tp = c_matrix.ravel()
 
     tpr = tp / (tp + fn)
     tnr = tn / (tn + fp)
-
     fpr = fp / (fp + tn)
     fnr = fn / (fn + tp)
 
@@ -70,14 +69,14 @@ def get_tpr(c_matrix):
 
     return {"tpr":tpr, "tnr":tnr, "fpr":fpr, "fnr":fnr, "P(Y = 1)":group_fairness_metric}
 
-def train_separation(df_train):
+def train_separation_gender(df_train):
     df_train["Sex_male"] = np.random.binomial(1, 0.5, len(df_train))
     X_train = df_train.drop("Risk_bad", axis = 1).values
     y_train = df_train["Risk_bad"].values
     model = train_model(X_train, y_train, "sex_separation")
     return model
 
-def test_group_fairness(model, df_test, threshold):
+def test_group_fairness_gender(model, df_test, threshold):
     df_male = df_test[df_test["Sex_male"]==1.0]
     df_female = df_test[df_test["Sex_male"]==0.0]
 
@@ -105,3 +104,57 @@ def test_group_fairness(model, df_test, threshold):
     print(threshold, acc)
 
     return confusion_matrix_male, confusion_matrix_female, acc
+
+def get_age_mapping():
+    age_mapping = {'student': [0, 0, 0],
+        'young': [1, 0, 0],
+        'adult': [0, 1, 0],
+        'senior': [0, 0, 1]
+        }
+    age_cols = ["Age_cat_Young", "Age_cat_Adult", "Age_cat_Senior"]
+    return age_mapping, age_cols
+
+def create_dfs(df_test, age_cols, age_mapping):
+    dfs = {}
+    for k, v in age_mapping.items():
+
+        young_condition = df_test[age_cols[0]] == v[0]
+        adult_condition = df_test[age_cols[1]] == v[1]
+        senior_condition = df_test[age_cols[2]] == v[2]
+
+        dfs[k] = df_test.loc[(young_condition) & (adult_condition) & (senior_condition), :]
+
+    return dfs
+
+
+def get_anticlassification_train_dfs_age(df_train, df_test, age_cols, age_mapping):
+    df_train_anticlassification = df_train.copy()
+
+    df_train_anticlassification[age_cols] = age_mapping['student']
+    display(df_train_anticlassification.head())
+
+    df_test_anticlassification = df_test.copy()
+    return df_train_anticlassification, df_test_anticlassification
+
+
+def group_fairness_age(dfs, loaded_model):
+    results = {}
+    for key, df in dfs.items():
+        print()
+        print(key)
+        X_test, y_test = get_X_and_y(df)
+        y_pred = loaded_model.predict(X_test)
+        c_matrix = confusion_matrix(y_test, y_pred)
+        print("c_matrix\n", c_matrix)
+        results[key] = get_tpr_common(c_matrix)
+        
+    return results
+
+def get_group_fairness_age(dfs, og_model, file_suffix):
+    group_fairness_dict = group_fairness_age(dfs, og_model)
+
+    import json
+
+
+    with open(f"group_fairness_age{file_suffix}.json", "w") as f:
+        json.dump(group_fairness_dict, f, indent = 2)
