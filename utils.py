@@ -158,3 +158,49 @@ def get_group_fairness_age(dfs, og_model, file_suffix):
 
     with open(f"group_fairness_age{file_suffix}.json", "w") as f:
         json.dump(group_fairness_dict, f, indent = 2)
+
+student = [0, 0, 0]
+young = [1, 0, 0]
+adult = [0, 1, 0]
+senior = [0, 0, 1]
+
+def age_preds(test_df, loaded_model):
+    df_test = test_df.copy()
+    df_pred = pd.DataFrame(columns=['OG_pred', 'student_pred', 'young_pred', 'adult_pred', 'senior_pred'])
+    df_pred['OG_pred'] = df_test['Risk_bad']
+
+    age_mapping = {'student': [0, 0, 0],
+     'young': [1, 0, 0],
+     'adult': [0, 1, 0],
+     'senior': [0, 0, 1]
+    }
+    all_preds = []
+    for k, v in age_mapping.items():
+        df_test['Age_cat_Young'] = v[0]
+        df_test['Age_cat_Adult'] = v[1]
+        df_test['Age_cat_Senior'] = v[2]
+
+        X_test = df_test.drop('Risk_bad', axis=1).values
+        y_test = df_test['Risk_bad'].values
+
+        df_pred[f'{k}_pred'] = loaded_model.predict(X_test)
+
+        get_metrics(loaded_model, X_test, y_test)
+
+    return df_pred
+
+age_mapping = {'student': [0, 0, 0],
+     'young': [1, 0, 0],
+     'adult': [0, 1, 0],
+     'senior': [0, 0, 1]
+    }
+
+def test_anticlassification_age(df_test, loaded_model):
+    df_preds = age_preds(df_test, loaded_model)
+    for k, v in age_mapping.items():
+        df_preds[f'pred_changed_{k}'] = np.where(df_preds['OG_pred'] == df_preds[f'{k}_pred'], 0, 1)
+    changed_columns = [name for name in df_preds.columns if 'changed' in name]
+    changed = df_preds[changed_columns] 
+    changed['avg_change'] = changed.sum(axis=1) / 4
+    display(changed.avg_change.describe())
+
